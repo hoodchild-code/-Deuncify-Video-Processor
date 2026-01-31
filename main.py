@@ -72,7 +72,7 @@ async def upload_video(file: UploadFile = File(...)):
             
             cut_time = 0.0
             found_voice = False
-            threshold_db = -30.0
+            threshold_db = -45.0  # Lowered threshold for sensitivity
             
             if clip.audio:
                 try:
@@ -80,19 +80,52 @@ async def upload_video(file: UploadFile = File(...)):
                 except AttributeError:
                     audio_segment = clip.audio.subclip(0, analysis_duration)
 
-                chunk = audio_segment.to_soundarray()
+                # Get audio as array (N, n_channels)
+                audio_array = audio_segment.to_soundarray()
                 
-                if chunk is not None and len(chunk) > 0:
-                    max_amps = np.max(np.abs(chunk), axis=1)
+                if audio_array is not None and len(audio_array) > 0:
+                    # Convert to mono if stereo by taking max absolute value across channels
+                    if audio_array.ndim > 1:
+                        audio_mono = np.max(np.abs(audio_array), axis=1)
+                    else:
+                        audio_mono = np.abs(audio_array)
+
+                    # Normalize
+                    max_val = np.max(audio_mono)
+                    if max_val > 0:
+                        audio_mono = audio_mono / max_val
+                        print(f"Audio normalized. Max value was: {max_val}")
+                    else:
+                        print("Audio is purely silent.")
+
+                    # Calculate threshold amplitude
                     threshold_amp = 10 ** (threshold_db / 20)
-                    indices = np.where(max_amps > threshold_amp)[0]
+                    print(f"Threshold dB: {threshold_db}, Threshold Amp: {threshold_amp:.6f}")
+
+                    # Chunk analysis
+                    fps = audio_segment.fps
+                    chunk_duration = 0.05
+                    chunk_size = int(chunk_duration * fps)
                     
-                    if len(indices) > 0:
-                        first_index = indices[0]
-                        fps = audio_segment.fps
-                        cut_time = first_index / fps
-                        found_voice = True
-            
+                    total_samples = len(audio_mono)
+                    
+                    for i in range(0, total_samples, chunk_size):
+                        chunk = audio_mono[i:i + chunk_size]
+                        if len(chunk) == 0:
+                            break
+                            
+                        chunk_max = np.max(chunk)
+                        
+                        if chunk_max > threshold_amp:
+                            current_time = i / fps
+                            cut_time = current_time
+                            found_voice = True
+                            print(f"Voice detected! Time: {current_time:.3f}s, Max Amp: {chunk_max:.6f} > {threshold_amp:.6f}")
+                            break
+                        elif chunk_max > threshold_amp * 0.1:
+                             current_time = i / fps
+                             print(f"Time: {current_time:.3f}s, Max Amp: {chunk_max:.6f} (Threshold: {threshold_amp:.6f})")
+
             if found_voice:
                 start_time = max(0, cut_time - 0.1)
                 print(f"Voice detected at {cut_time:.3f}s. Trimming from {start_time:.3f}s.")
