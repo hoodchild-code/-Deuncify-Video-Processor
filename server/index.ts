@@ -4,6 +4,7 @@ import path from "path";
 // Load .env from project root
 config({ path: path.resolve(process.cwd(), ".env") });
 import express, { type Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { registerAuthRoutes } from "./auth-routes";
 import { registerVideoRoutes } from "./video-routes";
@@ -12,6 +13,24 @@ import { createServer } from "http";
 import { spawn } from "child_process";
 import { execSync } from "child_process";
 import { deleteExpiredVideos } from "./storage";
+
+// Rate limiters for DDoS / abuse protection (trust proxy = 1 for correct IP behind nginx)
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 200, // 200 requests per 15 min per IP
+  message: { detail: "Too many requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20, // 20 uploads per hour per IP
+  message: { detail: "Upload limit reached. Try again in an hour." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 
 // process.cwd() works in both ESM dev and CJS prod (run from project root)
 const PROJECT_ROOT = process.cwd();
@@ -72,6 +91,10 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Apply rate limiters before routes (DDoS / abuse protection)
+app.use("/api", generalLimiter);
+app.use("/api/upload", uploadLimiter);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
