@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { spawn } from "child_process";
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,6 +61,16 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  log("Starting Python backend on port 5001...");
+  const pythonProcess = spawn("uvicorn", ["main:app", "--host", "0.0.0.0", "--port", "5001", "--reload"], {
+    stdio: "inherit",
+    shell: true
+  });
+
+  pythonProcess.on('error', (err) => {
+    console.error('Failed to start Python backend:', err);
+  });
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
