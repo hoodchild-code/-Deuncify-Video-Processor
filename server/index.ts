@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
@@ -14,7 +15,8 @@ import { deleteExpiredVideos } from "./storage";
 
 import "./auth";
 
-const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
+// process.cwd() works in both ESM dev and CJS prod (run from project root)
+const PROJECT_ROOT = process.cwd();
 const PYTHON_PORT = 5001;
 
 function killProcessesOnPort(port: number): void {
@@ -133,9 +135,10 @@ app.use((req, res, next) => {
   await new Promise((r) => setTimeout(r, 1500)); // Let port release
 
   log("Starting Python backend on port 5001...");
+  const isDev = process.env.NODE_ENV !== "production";
   const pythonProcess = spawn(
     process.platform === "win32" ? "python" : "python3",
-    ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(PYTHON_PORT), "--reload"],
+    ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(PYTHON_PORT), ...(isDev ? ["--reload"] : [])],
     {
       stdio: "inherit",
       cwd: PROJECT_ROOT,
