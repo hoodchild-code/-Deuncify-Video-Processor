@@ -97,28 +97,30 @@ export default function Home() {
 
         {/* Features Grid (Only show if no result) */}
         {!processedVideo && (
-          <motion.div 
+          <motion.section 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3, duration: 0.6 }}
             className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16 w-full max-w-4xl"
+            aria-labelledby="features-heading"
           >
+            <h2 id="features-heading" className="sr-only">How Deuncify works</h2>
             <FeatureCard 
-              icon={<MicOff className="w-6 h-6 text-primary" />}
+              icon={<MicOff className="w-6 h-6 text-primary" aria-hidden="true" />}
               title="Smart Detection"
               description="Analyzes audio decibels to find exactly when you start speaking."
             />
             <FeatureCard 
-              icon={<Scissors className="w-6 h-6 text-accent" />}
+              icon={<Scissors className="w-6 h-6 text-accent" aria-hidden="true" />}
               title="Precise Trimming"
               description="Cuts the silence while keeping a 0.1s buffer so you don't sound clipped."
             />
             <FeatureCard 
-              icon={<Zap className="w-6 h-6 text-purple-400" />}
+              icon={<Zap className="w-6 h-6 text-purple-400" aria-hidden="true" />}
               title="Instant Result"
               description="Processing happens in seconds. Download immediately."
             />
-          </motion.div>
+          </motion.section>
         )}
 
         {/* Main Interaction Area */}

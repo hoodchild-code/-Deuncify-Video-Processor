@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button-custom";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 
 export default function Register() {
   const { register } = useAuth();
@@ -44,7 +44,7 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-background/95">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Create an account</CardTitle>
+          <h1 className="text-2xl font-semibold leading-none tracking-tight">Create an account</h1>
           <CardDescription>Use your email and a password (min 8 characters) to sign up.</CardDescription>
         </CardHeader>
         <CardContent>

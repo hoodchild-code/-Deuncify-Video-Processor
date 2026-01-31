@@ -61,8 +61,10 @@ export function VideoPlayer({ videoBlob, onReset }: VideoPlayerProps) {
           onEnded={() => setIsPlaying(false)}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
-          controls={false} // Custom controls
+          controls={false}
           playsInline
+          preload="metadata"
+          title="Deuncified video playback"
         />
 
         {/* Custom Overlay Controls */}
