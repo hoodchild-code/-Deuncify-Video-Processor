@@ -5,21 +5,10 @@ import {
   integer,
 } from "drizzle-orm/sqlite-core";
 
-// Database schema
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
-
+// Database schema - users are managed by Supabase Auth; userId = Supabase user id
 export const videos = sqliteTable("videos", {
   id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(), // Supabase auth.users.id
   filename: text("filename").notNull(), // stored filename on disk
   originalName: text("original_name").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" })
@@ -27,8 +16,6 @@ export const videos = sqliteTable("videos", {
     .$defaultFn(() => new Date()),
 });
 
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
 export type Video = typeof videos.$inferSelect;
 export type InsertVideo = typeof videos.$inferInsert;
 

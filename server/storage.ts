@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { users, videos } from "@shared/schema";
+import { videos } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import path from "path";

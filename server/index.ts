@@ -1,12 +1,9 @@
-try {
-  require("dotenv/config");
-} catch {
-  // dotenv optional - use system env vars if not installed
-}
+import { config } from "dotenv";
+import path from "path";
+
+// Load .env from project root
+config({ path: path.resolve(process.cwd(), ".env") });
 import express, { type Request, Response, NextFunction } from "express";
-import session from "express-session";
-import passport from "passport";
-import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { registerAuthRoutes } from "./auth-routes";
 import { registerVideoRoutes } from "./video-routes";
@@ -14,10 +11,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { spawn } from "child_process";
 import { execSync } from "child_process";
-import path from "path";
 import { deleteExpiredVideos } from "./storage";
-
-import "./auth";
 
 // process.cwd() works in both ESM dev and CJS prod (run from project root)
 const PROJECT_ROOT = process.cwd();
@@ -69,8 +63,6 @@ declare module "http" {
   }
 }
 
-const SessionStore = MemoryStore(session);
-
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -80,24 +72,6 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
-
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "deuncify-dev-secret-change-in-prod",
-    resave: false,
-    saveUninitialized: false,
-    store: new SessionStore({ checkPeriod: 86400000 }),
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: "lax",
-      ...(process.env.COOKIE_DOMAIN && { domain: process.env.COOKIE_DOMAIN }),
-    },
-  })
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

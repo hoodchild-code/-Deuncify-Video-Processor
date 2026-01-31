@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { api } from "@shared/routes";
+import { supabase } from "./supabase";
 import { userSchema } from "@shared/schema";
 import type { z } from "zod";
 
@@ -15,79 +15,89 @@ type User = z.infer<typeof userSchema>;
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
+  getAccessToken: () => Promise<string | null>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refetch: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function sessionToUser(session: { user: { id: string; email?: string } }): User {
+  return userSchema.parse({
+    id: session.user.id,
+    email: session.user.email ?? "",
+    createdAt: new Date(),
+  });
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refetch = useCallback(async () => {
-    try {
-      const res = await fetch(api.me.path, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(userSchema.parse(data));
-      } else {
-        setUser(null);
-      }
-    } catch {
-      setUser(null);
-    } finally {
+  useEffect(() => {
+    if (!supabase) {
       setIsLoading(false);
+      return;
     }
+
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session ? sessionToUser(session) : null);
+      setIsLoading(false);
+    };
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session ? sessionToUser(session) : null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
+  const getAccessToken = useCallback(async () => {
+    if (!supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await fetch(api.login.path, {
-      method: api.login.method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-      credentials: "include",
+    if (!supabase) throw new Error("Supabase not configured");
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Login failed");
-    }
-    const data = await res.json();
-    setUser(userSchema.parse(data));
+    if (error) throw new Error(error.message);
+    if (!data.session) throw new Error("Login failed");
+    setUser(sessionToUser(data.session));
   }, []);
 
   const register = useCallback(async (email: string, password: string) => {
-    const res = await fetch(api.register.path, {
-      method: api.register.method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-      credentials: "include",
+    if (!supabase) throw new Error("Supabase not configured");
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Registration failed");
+    if (error) throw new Error(error.message);
+    if (!data.session) {
+      // Supabase may require email confirmation - user exists but no session
+      throw new Error(
+        "Check your email to confirm your account before logging in."
+      );
     }
-    const data = await res.json();
-    setUser(userSchema.parse(data));
+    setUser(sessionToUser(data.session));
   }, []);
 
   const logout = useCallback(async () => {
-    await fetch(api.logout.path, {
-      method: api.logout.method,
-      credentials: "include",
-    });
+    if (supabase) await supabase.auth.signOut();
     setUser(null);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, register, logout, refetch }}
+      value={{ user, isLoading, getAccessToken, login, register, logout }}
     >
       {children}
     </AuthContext.Provider>

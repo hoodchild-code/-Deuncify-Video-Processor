@@ -1,19 +1,25 @@
 import { useMutation } from "@tanstack/react-query";
 import { errorSchema } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
 
 export function useVideoProcessing() {
-  const { toast } = useToast();
+  const { toast, getAccessToken } = useAuth();
 
   return useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
 
+      const headers: Record<string, string> = {};
+      const token = await getAccessToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers,
       });
 
       if (!res.ok) {
@@ -29,7 +35,6 @@ export function useVideoProcessing() {
         throw new Error(`Upload failed: ${res.statusText}`);
       }
 
-      // Server saves to history automatically for logged-in users
       return await res.blob();
     },
     onError: (error) => {

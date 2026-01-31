@@ -1,13 +1,14 @@
 import type { Express, Request, Response } from "express";
 import multer from "multer";
 import { createReadStream } from "fs";
-import { Readable } from "stream";
+import axios from "axios";
 import {
   createVideo,
   getVideoForUser,
   listUserVideos,
   getVideoFilepath,
 } from "./storage";
+import { requireSupabaseAuth, optionalSupabaseAuth } from "./supabase-auth";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -17,94 +18,114 @@ const upload = multer({
 const PYTHON_URL = "http://127.0.0.1:5001";
 const PYTHON_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
-function requireAuth(req: Request, res: Response, next: () => void) {
-  if (!req.isAuthenticated() || !req.user) {
-    res.status(401).json({ detail: "Login required" });
-    return;
-  }
-  next();
-}
-
 export function registerVideoRoutes(app: Express) {
   // Handle uploads: receive file, forward to Python, save result, return to client
-  app.post("/api/upload", upload.single("file"), async (req: Request, res: Response) => {
-    if (!req.file) {
-      return res.status(400).json({ detail: "No file uploaded" });
-    }
-
-    const originalName = req.file.originalname || "video.mp4";
-    console.log(`[upload] Received ${originalName} (${req.file.size} bytes), forwarding to Python...`);
-
-    try {
-      // Build FormData to send to Python
-      const formData = new FormData();
-      const blob = new Blob([req.file.buffer], { type: req.file.mimetype || "video/mp4" });
-      formData.append("file", blob, originalName);
-
-      // Forward to Python with long timeout
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PYTHON_TIMEOUT);
-
-      const pythonRes = await fetch(`${PYTHON_URL}/upload`, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (!pythonRes.ok) {
-        const errText = await pythonRes.text().catch(() => "Unknown error");
-        console.error(`[upload] Python returned ${pythonRes.status}: ${errText}`);
-        return res.status(pythonRes.status).json({ detail: errText || "Processing failed" });
+  // optionalSupabaseAuth - if logged in (JWT), save to history; if not, still process
+  app.post(
+    "/api/upload",
+    optionalSupabaseAuth,
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      if (!req.file) {
+        return res.status(400).json({ detail: "No file uploaded" });
       }
 
-      const resultBuffer = Buffer.from(await pythonRes.arrayBuffer());
-      console.log(`[upload] Python returned ${resultBuffer.length} bytes`);
+      const originalName = req.file.originalname || "video.mp4";
+      console.log(
+        `[upload] Received ${originalName} (${req.file.size} bytes), forwarding to Python...`
+      );
 
-      // Save to history if user is logged in
-      if (req.isAuthenticated() && req.user) {
-        const userId = (req.user as { id: string }).id;
-        const saveName = originalName.replace(/\.[^.]+$/, "") + "_deuncified.mp4";
-        try {
-          await createVideo(userId, saveName, resultBuffer);
-          console.log(`[upload] Saved to history for user ${userId}`);
-        } catch (saveErr) {
-          console.error("[upload] Failed to save to history:", saveErr);
-          // Don't fail the request - video still works
+      try {
+        const FormData = (await import("form-data")).default;
+        const formData = new FormData();
+        formData.append("file", req.file.buffer, {
+          filename: originalName,
+          contentType: req.file.mimetype || "video/mp4",
+        });
+
+        const timeout = PYTHON_TIMEOUT;
+        const pythonRes = await axios.post(`${PYTHON_URL}/upload`, formData, {
+          headers: formData.getHeaders(),
+          responseType: "arraybuffer",
+          timeout,
+        });
+
+        const resultBuffer = Buffer.from(pythonRes.data);
+        console.log(`[upload] Python returned ${resultBuffer.length} bytes`);
+
+        // Save to history if user is logged in (JWT)
+        if (req.supabaseUser) {
+          const userId = req.supabaseUser.id;
+          const saveName =
+            originalName.replace(/\.[^.]+$/, "") + "_deuncified.mp4";
+          try {
+            await createVideo(userId, saveName, resultBuffer);
+            console.log(`[upload] Saved to history for user ${userId} (${saveName})`);
+          } catch (saveErr) {
+            console.error("[upload] Failed to save to history:", saveErr);
+            // Log the full error for debugging
+            if (saveErr instanceof Error) {
+              console.error("[upload] Error details:", saveErr.message, saveErr.stack);
+            }
+          }
+        } else {
+          console.log("[upload] No user authenticated - skipping history save");
         }
+
+        res.setHeader("Content-Type", "video/mp4");
+        res.setHeader(
+          "Content-Disposition",
+          `inline; filename="deuncified_${originalName}"`
+        );
+        res.send(resultBuffer);
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          if (err.code === "ECONNABORTED" || err.message.includes("timeout")) {
+            console.error("[upload] Python request timed out");
+            return res
+              .status(504)
+              .json({ detail: "Processing timed out. Try a shorter video." });
+          }
+          const status = err.response?.status || 500;
+          const errText = err.response?.data
+            ? Buffer.isBuffer(err.response.data)
+              ? err.response.data.toString()
+              : JSON.stringify(err.response.data)
+            : err.message;
+          console.error(`[upload] Python returned ${status}: ${errText}`);
+          return res.status(status).json({
+            detail: errText || "Processing failed",
+          });
+        }
+        console.error("[upload] Error:", err);
+        return res.status(500).json({ detail: "Video processing failed" });
       }
+    }
+  );
 
-      res.setHeader("Content-Type", "video/mp4");
-      res.setHeader("Content-Disposition", `inline; filename="deuncified_${originalName}"`);
-      res.send(resultBuffer);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") {
-        console.error("[upload] Python request timed out");
-        return res.status(504).json({ detail: "Processing timed out. Try a shorter video." });
+  app.post(
+    "/api/save-video",
+    requireSupabaseAuth,
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      if (!req.file || !req.supabaseUser) {
+        return res.status(400).json({ detail: "No file" });
       }
-      console.error("[upload] Error:", err);
-      return res.status(500).json({ detail: "Video processing failed" });
+      const userId = req.supabaseUser.id;
+      const originalName =
+        req.body.originalName || req.file.originalname || "deuncified_video.mp4";
+      try {
+        await createVideo(userId, originalName, req.file.buffer);
+        res.json({ ok: true });
+      } catch (err) {
+        console.error("Save video error:", err);
+        res.status(500).json({ detail: "Failed to save" });
+      }
     }
-  });
+  );
 
-  app.post("/api/save-video", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
-    if (!req.file || !req.user) {
-      return res.status(400).json({ detail: "No file" });
-    }
-    const userId = (req.user as { id: string }).id;
-    const originalName = req.body.originalName || req.file.originalname || "deuncified_video.mp4";
-    try {
-      await createVideo(userId, originalName, req.file.buffer);
-      res.json({ ok: true });
-    } catch (err) {
-      console.error("Save video error:", err);
-      res.status(500).json({ detail: "Failed to save" });
-    }
-  });
-
-  app.get("/api/videos", requireAuth, async (req: Request, res: Response) => {
-    const userId = (req.user as { id: string }).id;
+  app.get("/api/videos", requireSupabaseAuth, async (req: Request, res: Response) => {
+    const userId = req.supabaseUser!.id;
     try {
       const list = await listUserVideos(userId);
       res.json(
@@ -120,22 +141,29 @@ export function registerVideoRoutes(app: Express) {
     }
   });
 
-  app.get("/api/videos/:id", requireAuth, async (req: Request, res: Response) => {
-    const userId = (req.user as { id: string }).id;
-    const videoId = String(req.params.id);
-    try {
-      const video = await getVideoForUser(userId, videoId);
-      if (!video) {
-        return res.status(404).json({ detail: "Video not found" });
+  app.get(
+    "/api/videos/:id",
+    requireSupabaseAuth,
+    async (req: Request, res: Response) => {
+      const userId = req.supabaseUser!.id;
+      const videoId = String(req.params.id);
+      try {
+        const video = await getVideoForUser(userId, videoId);
+        if (!video) {
+          return res.status(404).json({ detail: "Video not found" });
+        }
+        const filepath = getVideoFilepath(video.filename);
+        const stream = createReadStream(filepath);
+        res.setHeader("Content-Type", "video/mp4");
+        res.setHeader(
+          "Content-Disposition",
+          `inline; filename="${video.originalName}"`
+        );
+        stream.pipe(res);
+      } catch (err) {
+        console.error("Get video error:", err);
+        res.status(500).json({ detail: "Failed to load video" });
       }
-      const filepath = getVideoFilepath(video.filename);
-      const stream = createReadStream(filepath);
-      res.setHeader("Content-Type", "video/mp4");
-      res.setHeader("Content-Disposition", `inline; filename="${video.originalName}"`);
-      stream.pipe(res);
-    } catch (err) {
-      console.error("Get video error:", err);
-      res.status(500).json({ detail: "Failed to load video" });
     }
-  });
+  );
 }

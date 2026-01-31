@@ -10,22 +10,36 @@ import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function VideoHistory() {
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
 
-  const { data: videos = [], isLoading } = useQuery({
-    queryKey: ["videos"],
+  const { data: videos = [], isLoading, error } = useQuery({
+    queryKey: ["videos", user?.id],
     queryFn: async () => {
-      const res = await fetch(api.videos.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load videos");
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
+      const res = await fetch(api.videos.list.path, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(errorData.detail || "Failed to load videos");
+      }
       return res.json();
     },
     enabled: !!user,
   });
 
   const handlePreview = async (id: string) => {
-    const res = await fetch(api.videos.get(id).path, { credentials: "include" });
+    const token = await getAccessToken();
+    const res = await fetch(api.videos.get(id).path, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     if (!res.ok) return;
     const blob = await res.blob();
     setPreviewBlob(blob);
@@ -75,6 +89,15 @@ export default function VideoHistory() {
             <Loader2 className="w-5 h-5 animate-spin" />
             Loading videos...
           </div>
+        ) : error ? (
+          <Card className="border-red-500/50 bg-red-500/10">
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <p className="text-lg text-red-400 mb-2">Error loading videos</p>
+              <p className="text-sm text-muted-foreground">
+                {error instanceof Error ? error.message : "Unknown error"}
+              </p>
+            </CardContent>
+          </Card>
         ) : videos.length === 0 ? (
           <Card className="border-white/10 bg-white/5">
             <CardContent className="flex flex-col items-center justify-center py-16">
