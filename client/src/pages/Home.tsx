@@ -1,12 +1,16 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { UploadZone } from "@/components/UploadZone";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { Footer } from "@/components/Footer";
 import { useVideoProcessing } from "@/hooks/use-video-processing";
-import { Sparkles, Zap, MicOff, Scissors } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { Sparkles, Zap, MicOff, Scissors, LogIn, LogOut, Film } from "lucide-react";
 import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button-custom";
 
 export default function Home() {
+  const { user, logout, isLoading } = useAuth();
   const [processedVideo, setProcessedVideo] = useState<Blob | null>(null);
   const { mutate: processVideo, isPending } = useVideoProcessing();
 
@@ -26,6 +30,47 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center bg-fixed bg-no-repeat relative">
       {/* Dark overlay for readability */}
       <div className="absolute inset-0 bg-background/90 backdrop-blur-xl z-0" />
+
+      <header className="sticky top-0 z-20 border-b border-white/10 bg-black/30 backdrop-blur-md">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <span className="text-xl font-bold text-white">Deuncify</span>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <Link href="/videos">
+                  <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
+                    <Film className="w-4 h-4 mr-1" />
+                    My Videos
+                  </Button>
+                </Link>
+                <Button variant="ghost" size="sm" className="text-white hover:bg-white/10" onClick={() => logout()}>
+                  <LogOut className="w-4 h-4 mr-1" />
+                  Log out
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
+                    <LogIn className="w-4 h-4 mr-1" />
+                    Log in
+                  </Button>
+                </Link>
+                <Link href="/register">
+                  <Button size="sm">Sign up</Button>
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+        {!user && !isLoading && (
+          <div className="container mx-auto px-4 pb-3">
+            <p className="text-sm text-amber-200/90">
+              <Link href="/register" className="underline font-medium">Create an account</Link> to save your deuncified videos for 30 days.
+            </p>
+          </div>
+        )}
+      </header>
 
       <main className="flex-1 container mx-auto px-4 py-12 relative z-10 flex flex-col items-center">
         {/* Header Section */}

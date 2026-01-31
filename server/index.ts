@@ -1,8 +1,57 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import passport from "passport";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
+import { registerAuthRoutes } from "./auth-routes";
+import { registerVideoRoutes } from "./video-routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { spawn } from "child_process";
+import { execSync } from "child_process";
+import path from "path";
+import { deleteExpiredVideos } from "./storage";
+
+import "./auth";
+
+const PROJECT_ROOT = path.resolve(import.meta.dirname, "..");
+const PYTHON_PORT = 5001;
+
+function killProcessesOnPort(port: number): void {
+  try {
+    if (process.platform === "win32") {
+      const out = execSync(`netstat -ano | findstr ":${port}"`, { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] });
+      const pids = new Set<string>();
+      for (const line of out.split("\n")) {
+        if (!line.includes("LISTENING")) continue; // Only kill listeners, not client connections
+        const m = line.trim().match(/\s+(\d+)\s*$/);
+        if (m) pids.add(m[1]);
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+        } catch {
+          // ignore
+        }
+      }
+    } else {
+      try {
+        const pids = execSync(`lsof -ti:${port}`, { encoding: "utf8" }).trim().split(/\s+/).filter(Boolean);
+        for (const pid of pids) {
+          try {
+            process.kill(Number(pid), "SIGKILL");
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // Port may be free
+      }
+    }
+  } catch {
+    // Port may be free
+  }
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,6 +62,8 @@ declare module "http" {
   }
 }
 
+const SessionStore = MemoryStore(session);
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -22,6 +73,22 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "deuncify-dev-secret-change-in-prod",
+    resave: false,
+    saveUninitialized: false,
+    store: new SessionStore({ checkPeriod: 86400000 }),
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    },
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -61,17 +128,53 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Kill orphaned uvicorn processes from previous runs (port conflicts)
+  killProcessesOnPort(PYTHON_PORT);
+  await new Promise((r) => setTimeout(r, 1500)); // Let port release
+
   log("Starting Python backend on port 5001...");
-  const pythonProcess = spawn("uvicorn", ["main:app", "--host", "0.0.0.0", "--port", "5001", "--reload"], {
-    stdio: "inherit",
-    shell: true
+  const pythonProcess = spawn(
+    process.platform === "win32" ? "python" : "python3",
+    ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", String(PYTHON_PORT), "--reload"],
+    {
+      stdio: "inherit",
+      cwd: PROJECT_ROOT,
+      env: { ...process.env },
+    }
+  );
+
+  pythonProcess.on("error", (err) => {
+    console.error("Failed to start Python backend:", err);
   });
 
-  pythonProcess.on('error', (err) => {
-    console.error('Failed to start Python backend:', err);
+  const killPython = () => {
+    try {
+      pythonProcess.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+  };
+  process.on("exit", killPython);
+  process.on("SIGINT", () => {
+    killPython();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    killPython();
+    process.exit(0);
   });
 
+  registerAuthRoutes(app);
+  registerVideoRoutes(app);
   await registerRoutes(httpServer, app);
+
+  // Clean up expired videos on startup and every 24h
+  const runCleanup = async () => {
+    const deleted = await deleteExpiredVideos();
+    if (deleted > 0) log(`Deleted ${deleted} expired video(s)`);
+  };
+  runCleanup();
+  setInterval(runCleanup, 24 * 60 * 60 * 1000);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -97,16 +200,11 @@ app.use((req, res, next) => {
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Default to 5000 if not specified. Use 127.0.0.1 on Windows to avoid ENOTSUP.
   const port = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.HOST || "127.0.0.1";
   httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
+    { port, host },
     () => {
       log(`serving on port ${port}`);
     },

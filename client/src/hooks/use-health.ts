@@ -9,8 +9,9 @@ export function useHealth() {
       if (!res.ok) throw new Error("API is offline");
       return api.health.responses[200].parse(await res.json());
     },
-    // Don't retry too aggressively for health checks
-    retry: 1,
-    refetchInterval: 30000, // Check every 30s
+    retry: 3,
+    retryDelay: 2000,
+    refetchInterval: 30000,
+    staleTime: 10000,
   });
 }

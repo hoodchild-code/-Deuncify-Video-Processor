@@ -7,20 +7,21 @@ export const api = {
   upload: {
     method: "POST",
     path: "/api/upload",
-    // Input is multipart/form-data, difficult to express fully in Zod for the frontend generator to automatically build a form,
-    // so we rely on implementation notes.
-    responses: {
-      200: z.any(), // Returns a video file blob
-      400: errorSchema,
-      500: errorSchema,
-    },
+    responses: { 200: z.any(), 400: errorSchema, 401: errorSchema, 500: errorSchema },
   },
   health: {
     method: "GET",
     path: "/api/health",
-    responses: {
-      200: healthResponseSchema,
-    },
+    responses: { 200: healthResponseSchema },
+  },
+  register: { method: "POST", path: "/api/register" },
+  login: { method: "POST", path: "/api/login" },
+  logout: { method: "POST", path: "/api/logout" },
+  me: { method: "GET", path: "/api/me" },
+  videos: {
+    list: { method: "GET", path: "/api/videos" },
+    get: (id: string) => ({ method: "GET" as const, path: `/api/videos/${id}` }),
+    save: { method: "POST", path: "/api/save-video" },
   },
 };
 
