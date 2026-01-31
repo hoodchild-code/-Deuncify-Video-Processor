@@ -60,6 +60,7 @@ function killProcessesOnPort(port: number): void {
 }
 
 const app = express();
+app.set("trust proxy", 1); // behind nginx
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -89,6 +90,8 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: "lax",
+      ...(process.env.COOKIE_DOMAIN && { domain: process.env.COOKIE_DOMAIN }),
     },
   })
 );
