@@ -41,7 +41,7 @@ export default function Home() {
           </div>
           
           <h1 className="text-5xl md:text-7xl font-display font-bold text-white mb-6 leading-tight tracking-tight">
-            Stop the <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent text-glow">Millennial Pause</span>
+            Stop the <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent text-glow">Millennial Pause Today!</span>
           </h1>
           
           <p className="text-xl text-muted-foreground md:px-12 leading-relaxed">
