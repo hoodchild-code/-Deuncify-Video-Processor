@@ -2,12 +2,18 @@
 
 ## What's Already Done
 
+- **Meta description** – 150–160 chars, keyword-optimized
 - **Title & meta tags** – In `client/index.html`
+- **og:image & twitter:image** – Social share image (1200×630)
 - **Sitemap** – `https://deuncifyer.com/sitemap.xml`
 - **robots.txt** – `https://deuncifyer.com/robots.txt`
-- **JSON-LD** – WebApplication schema for Google
-- **Open Graph & Twitter** – Social sharing tags
-- **Semantic headings** – H1/H2 structure on pages
+- **JSON-LD** – SoftwareApplication schema for Google
+- **Open Graph & Twitter** – Social sharing tags with image alt
+- **Semantic headings** – H1/H2/H3 for keyword targeting
+- **Internal linking** – /how-it-works, /pricing, /examples, Terms, Privacy
+- **CTAs with UTM params** – Ready for analytics when you add GA4
+- **Trust badge** – “Secure video uploads”
+- **Testimonial** – Social proof on homepage
 - **Route lazy loading** – Smaller initial bundle
 - **Video preload** – `metadata` only for faster load
 

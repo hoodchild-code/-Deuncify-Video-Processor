@@ -14,7 +14,16 @@ export function Footer() {
           <span>for creators</span>
         </div>
 
-        <nav className="flex items-center gap-4" aria-label="Legal">
+        <nav className="flex flex-wrap items-center justify-center gap-4" aria-label="Site navigation">
+          <Link href="/how-it-works" className="hover:text-white transition-colors">
+            How it works
+          </Link>
+          <Link href="/examples" className="hover:text-white transition-colors">
+            Examples
+          </Link>
+          <Link href="/pricing" className="hover:text-white transition-colors">
+            Pricing
+          </Link>
           <Link href="/terms" className="hover:text-white transition-colors">
             Terms
           </Link>
