@@ -3,7 +3,7 @@ import { UploadZone } from "@/components/UploadZone";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { Footer } from "@/components/Footer";
 import { useVideoProcessing } from "@/hooks/use-video-processing";
-import { Sparkles, Zap, MicOff } from "lucide-react";
+import { Sparkles, Zap, MicOff, Scissors } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function Home() {
