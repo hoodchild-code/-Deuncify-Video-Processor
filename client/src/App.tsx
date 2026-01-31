@@ -11,6 +11,8 @@ import { Loader2 } from "lucide-react";
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
 const VideoHistory = lazy(() => import("@/pages/VideoHistory"));
+const Terms = lazy(() => import("@/pages/Terms"));
+const Privacy = lazy(() => import("@/pages/Privacy"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function PageLoader() {
@@ -29,6 +31,8 @@ function Router() {
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
         <Route path="/videos" component={VideoHistory} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

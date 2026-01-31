@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useHealth } from "@/hooks/use-health";
 import { Heart, Activity } from "lucide-react";
 
@@ -6,12 +7,21 @@ export function Footer() {
 
   return (
     <footer className="w-full py-6 mt-auto border-t border-white/5 bg-black/20 backdrop-blur-sm">
-      <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between text-sm text-muted-foreground">
-        <div className="flex items-center gap-2 mb-4 md:mb-0">
+      <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between text-sm text-muted-foreground gap-4">
+        <div className="flex items-center gap-2">
           <span>Built with</span>
           <Heart className="w-4 h-4 text-primary animate-pulse" />
           <span>for creators</span>
         </div>
+
+        <nav className="flex items-center gap-4" aria-label="Legal">
+          <Link href="/terms" className="hover:text-white transition-colors">
+            Terms
+          </Link>
+          <Link href="/privacy" className="hover:text-white transition-colors">
+            Privacy
+          </Link>
+        </nav>
 
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
