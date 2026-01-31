@@ -1,4 +1,8 @@
-import "dotenv/config";
+try {
+  require("dotenv/config");
+} catch {
+  // dotenv optional - use system env vars if not installed
+}
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
