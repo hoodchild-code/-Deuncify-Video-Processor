@@ -94,15 +94,17 @@ def process_video_sync(content: bytes, filename: str) -> bytes:
 
         final_clip = clip.subclipped(final_start)
 
-        # 5. Write file with balanced quality (medium preset + explicit bitrate)
+        # 5. Write file - use ultrafast on low-RAM servers (t2.micro); medium for local/high-RAM
+        preset = os.environ.get("FFMPEG_PRESET", "ultrafast")  # ultrafast | medium | slow
+        bitrate = os.environ.get("FFMPEG_BITRATE", "5M")       # lower = less RAM
         final_clip.write_videofile(
             temp_out,
             codec="libx264",
             audio_codec="aac",
             temp_audiofile=None,
             remove_temp=True,
-            preset="medium",
-            bitrate="8M",
+            preset=preset,
+            bitrate=bitrate,
             audio_bitrate="192k",
             logger=None,
         )
