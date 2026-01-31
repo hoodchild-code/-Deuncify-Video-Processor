@@ -94,14 +94,18 @@ def process_video_sync(content: bytes, filename: str) -> bytes:
 
         final_clip = clip.subclipped(final_start)
 
-        # 5. Write file with high-compatibility settings
-        final_clip.write_videofile(temp_out,
-                                   codec="libx264",
-                                   audio_codec="aac",
-                                   temp_audiofile=None,
-                                   remove_temp=True,
-                                   preset="ultrafast",
-                                   logger=None)
+        # 5. Write file with balanced quality (medium preset + explicit bitrate)
+        final_clip.write_videofile(
+            temp_out,
+            codec="libx264",
+            audio_codec="aac",
+            temp_audiofile=None,
+            remove_temp=True,
+            preset="medium",
+            bitrate="8M",
+            audio_bitrate="192k",
+            logger=None,
+        )
 
         clip.close()
         final_clip.close()
