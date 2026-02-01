@@ -31,7 +31,9 @@ function getJwksClient(): ReturnType<typeof jwksClient> | null {
 
   // Supabase JWKS endpoint is at /auth/v1/.well-known/jwks.json
   const jwksUri = `${SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
-  console.log(`[auth] Initializing JWKS client with URI: ${jwksUri}`);
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[auth] Initializing JWKS client with URI: ${jwksUri}`);
+  }
   
   client = jwksClient({
     jwksUri,
@@ -89,6 +91,9 @@ export function requireSupabaseAuth(req: Request, res: Response, next: NextFunct
   const decodedHeader = jwt.decode(token, { complete: true });
   if (!decodedHeader) {
     return res.status(401).json({ detail: "Invalid token format" });
+  }
+  if (decodedHeader.header.alg === "none" || decodedHeader.header.alg === "alg") {
+    return res.status(401).json({ detail: "Invalid token algorithm" });
   }
 
   // Supabase user tokens use ES256 (JWKS), anon/service_role use HS256 (secret)
@@ -165,6 +170,10 @@ export function optionalSupabaseAuth(req: Request, _res: Response, next: NextFun
       return;
     }
 
+    if (decodedHeader.header.alg === "none" || decodedHeader.header.alg === "alg") {
+      next();
+      return;
+    }
     // Supabase user tokens use ES256 (JWKS), anon/service_role use HS256 (secret)
     if (decodedHeader.header.alg === "ES256") {
       const jwksClientInstance = getJwksClient();

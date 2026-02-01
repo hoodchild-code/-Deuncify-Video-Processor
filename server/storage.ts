@@ -14,6 +14,8 @@ function ensureVideosDir() {
   }
 }
 
+const ALLOWED_EXT = [".mp4", ".mov"];
+
 export async function createVideo(
   userId: string,
   originalName: string,
@@ -21,7 +23,8 @@ export async function createVideo(
 ): Promise<{ id: string; filepath: string }> {
   ensureVideosDir();
   const id = randomUUID();
-  const ext = path.extname(originalName) || ".mp4";
+  let ext = path.extname(originalName).toLowerCase() || ".mp4";
+  if (!ALLOWED_EXT.includes(ext)) ext = ".mp4";
   const filename = `${id}${ext}`;
   const filepath = path.join(VIDEOS_DIR, filename);
   fs.writeFileSync(filepath, buffer);
@@ -66,8 +69,13 @@ export async function listUserVideos(userId: string) {
     .orderBy(desc(videos.createdAt));
 }
 
+/** Guard against path traversal - filename must be basename only */
 export function getVideoFilepath(filename: string): string {
-  return path.join(VIDEOS_DIR, filename);
+  const base = path.basename(filename);
+  if (base !== filename || base.includes("..")) {
+    throw new Error("Invalid filename");
+  }
+  return path.join(VIDEOS_DIR, base);
 }
 
 export async function deleteExpiredVideos(): Promise<number> {

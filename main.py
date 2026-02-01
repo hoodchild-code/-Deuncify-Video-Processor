@@ -129,10 +129,18 @@ def process_video_sync(content: bytes, filename: str) -> bytes:
         raise
 
 
+MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500MB
+ALLOWED_CONTENT_TYPES = {"video/mp4", "video/quicktime"}
+
+
 @app.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
     try:
         content = await file.read()
+        if len(content) > MAX_VIDEO_SIZE:
+            raise HTTPException(status_code=413, detail="File too large. Maximum 500MB.")
+        if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid file type. Only MP4 and MOV are allowed.")
         loop = asyncio.get_running_loop()
         output_bytes = await loop.run_in_executor(
             None, process_video_sync, content, file.filename or "video.mp4"

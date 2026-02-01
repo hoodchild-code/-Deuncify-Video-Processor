@@ -10,9 +10,25 @@ import {
 } from "./storage";
 import { requireSupabaseAuth, optionalSupabaseAuth } from "./supabase-auth";
 
+/** Sanitize filename for safe use in headers and storage - remove path traversal, control chars */
+function sanitizeFilename(name: string): string {
+  const basename = name.replace(/^.*[\\/]/, "").replace(/[^\w\s.-]/g, "_").trim() || "video";
+  return basename.length > 200 ? basename.slice(0, 200) : basename;
+}
+
+const ALLOWED_MIMETYPES = ["video/mp4", "video/quicktime"];
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !ALLOWED_MIMETYPES.includes(file.mimetype)) {
+      cb(new Error("Invalid file type. Only MP4 and MOV are allowed."));
+      return;
+    }
+    cb(null, true);
+  },
 });
 
 const PYTHON_URL = "http://127.0.0.1:5001";
@@ -24,13 +40,29 @@ export function registerVideoRoutes(app: Express) {
   app.post(
     "/api/upload",
     optionalSupabaseAuth,
-    upload.single("file"),
+    (req, res, next) => {
+      upload.single("file")(req, res, (err) => {
+        if (err) {
+          if (err instanceof multer.MulterError) {
+            if (err.code === "LIMIT_FILE_SIZE") {
+              return res.status(400).json({ detail: "File too large. Maximum 500MB." });
+            }
+            return res.status(400).json({ detail: err.message });
+          }
+          return res.status(400).json({ detail: err instanceof Error ? err.message : "Invalid file" });
+        }
+        next();
+      });
+    },
     async (req: Request, res: Response) => {
       if (!req.file) {
         return res.status(400).json({ detail: "No file uploaded" });
       }
+      if (!ALLOWED_MIMETYPES.includes(req.file.mimetype)) {
+        return res.status(400).json({ detail: "Invalid file type. Only MP4 and MOV are allowed." });
+      }
 
-      const originalName = req.file.originalname || "video.mp4";
+      const originalName = sanitizeFilename(req.file.originalname || "video.mp4");
       console.log(
         `[upload] Received ${originalName} (${req.file.size} bytes), forwarding to Python...`
       );
@@ -72,11 +104,9 @@ export function registerVideoRoutes(app: Express) {
           console.log("[upload] No user authenticated - skipping history save");
         }
 
+        const safeFilename = `deuncified_${originalName}`.replace(/"/g, "'");
         res.setHeader("Content-Type", "video/mp4");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename="deuncified_${originalName}"`
-        );
+        res.setHeader("Content-Disposition", `inline; filename="${safeFilename}"`);
         res.send(resultBuffer);
       } catch (err: unknown) {
         if (axios.isAxiosError(err)) {
@@ -112,8 +142,9 @@ export function registerVideoRoutes(app: Express) {
         return res.status(400).json({ detail: "No file" });
       }
       const userId = req.supabaseUser.id;
-      const originalName =
-        req.body.originalName || req.file.originalname || "deuncified_video.mp4";
+      const originalName = sanitizeFilename(
+        req.body.originalName || req.file.originalname || "deuncified_video.mp4"
+      );
       try {
         await createVideo(userId, originalName, req.file.buffer);
         res.json({ ok: true });
@@ -154,11 +185,9 @@ export function registerVideoRoutes(app: Express) {
         }
         const filepath = getVideoFilepath(video.filename);
         const stream = createReadStream(filepath);
+        const safeFilename = sanitizeFilename(video.originalName).replace(/"/g, "'");
         res.setHeader("Content-Type", "video/mp4");
-        res.setHeader(
-          "Content-Disposition",
-          `inline; filename="${video.originalName}"`
-        );
+        res.setHeader("Content-Disposition", `inline; filename="${safeFilename}"`);
         stream.pipe(res);
       } catch (err) {
         console.error("Get video error:", err);

@@ -4,6 +4,7 @@ import path from "path";
 // Load .env from project root
 config({ path: path.resolve(process.cwd(), ".env") });
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { registerAuthRoutes } from "./auth-routes";
@@ -82,6 +83,12 @@ declare module "http" {
   }
 }
 
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Allow inline scripts for Vite HMR in dev; tighten for production if needed
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(
   express.json({
     verify: (req, _res, buf) => {
