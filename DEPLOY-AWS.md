@@ -92,20 +92,34 @@ node -v
 sudo pip3 install uvicorn fastapi python-multipart moviepy numpy
 ```
 
-### 5.4 Clone repo and build
+### 5.4 Add swap (required for t2.micro – prevents OOM crashes)
+
+```bash
+sudo fallocate -l 1G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### 5.5 Clone repo and build
+
+**Important:** Clone to a path **without** a leading hyphen. A leading `-` can cause `ERR_MODULE_NOT_FOUND`.
 
 ```bash
 sudo mkdir -p /var/www
 sudo chown ubuntu:ubuntu /var/www
 cd /var/www
-git clone https://github.com/hoodchild-code/-Deuncify-Video-Processor.git
-cd -Deuncify-Video-Processor
-npm ci
+git clone https://github.com/hoodchild-code/-Deuncify-Video-Processor.git Deuncify-Video-Processor
+cd Deuncify-Video-Processor
+npm install
 npm run build
 mkdir -p data
 ```
 
-### 5.5 Create .env
+If `npm run build` runs out of memory, run `npm run build:server` after the client build completes (dist/public exists).
+
+### 5.6 Create .env
 
 ```bash
 nano .env
@@ -129,16 +143,15 @@ SUPABASE_JWT_SECRET=your-jwt-secret
 
 Save (Ctrl+O, Enter, Ctrl+X).
 
-### 5.6 Install PM2 and start the app
+### 5.7 Install PM2 and start the app
 
 ```bash
 sudo npm install -g pm2
-pm2 start dist/index.cjs --name deuncify
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
-
-Run the command PM2 prints (the `sudo env PATH=... pm2 startup systemd` line). Then:
+Run the command PM2 prints (e.g. `sudo env PATH=... pm2 startup systemd`). Then:
 
 ```bash
 pm2 status
@@ -212,12 +225,15 @@ If you **stop** the instance, you don’t pay for compute, but the public IP wil
 ## Updating the app
 
 ```bash
-cd /var/www/-Deuncify-Video-Processor
-git pull
-npm ci
+cd /var/www/Deuncify-Video-Processor
+git checkout -- package-lock.json   # if you get merge conflicts
+git pull origin main
+npm install
 npm run build
 pm2 restart deuncify
 ```
+
+If the full build fails (OOM), run `npm run build:server` after dist/public exists.
 
 ---
 
