@@ -1,20 +1,27 @@
 import os
 import asyncio
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import logging
+import shutil
+from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.background import BackgroundTask
 from moviepy import VideoFileClip
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-DEFAULT_MAX_CONCURRENT_JOBS = max(1, min(4, os.cpu_count() or 1))
+DEFAULT_MAX_CONCURRENT_JOBS = max(1, min(2, os.cpu_count() or 1))
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", str(DEFAULT_MAX_CONCURRENT_JOBS)))
 MAX_CONCURRENT_JOBS = max(1, MAX_CONCURRENT_JOBS)
 PROCESS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
-EXECUTOR = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
+EXECUTOR = ProcessPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,20 +44,24 @@ def safe_unlink(path: str) -> None:
             pass
 
 
-def process_video_sync(input_path: str) -> bytes:
-    """Runs in thread pool - MoviePy blocks the event loop otherwise."""
+def process_video_sync(input_path: str, output_path: str) -> str:
+    """Runs in process pool - MoviePy/ffmpeg are CPU bound."""
     temp_out = None
     clip = None
     final_clip = None
+    success = False
     try:
         clip = VideoFileClip(input_path)
 
         if not clip.audio:
             clip.close()
             clip = None
-            with open(input_path, "rb") as f:
-                out = f.read()
-            return out
+            temp_out_fd, temp_out = tempfile.mkstemp(suffix=".mp4")
+            os.close(temp_out_fd)
+            shutil.copyfile(input_path, temp_out)
+            os.replace(temp_out, output_path)
+            success = True
+            return output_path
 
         # 2. Extract first 5s of audio and convert to mono
         fps = 44100
@@ -91,17 +102,28 @@ def process_video_sync(input_path: str) -> bytes:
             is_speech = w_rms > (ratio_threshold * noise_floor) and w_rms > abs_threshold
             if is_speech:
                 cut_time = i / fps
-                print(f"DEBUG: Speech onset at {cut_time:.3f}s (RMS={w_rms:.5f}, noise_floor={noise_floor:.5f}, ratio={w_rms/noise_floor:.1f}x)")
+                logger.debug(
+                    "Speech onset at %.3fs (RMS=%.5f, noise_floor=%.5f, ratio=%.1fx)",
+                    cut_time,
+                    w_rms,
+                    noise_floor,
+                    w_rms / noise_floor,
+                )
                 break
 
         if cut_time == 0:
-            print(f"DEBUG: No speech detected (noise_floor={noise_floor:.5f}); keeping video from start")
+            logger.debug(
+                "No speech detected (noise_floor=%.5f); keeping video from start",
+                noise_floor,
+            )
 
         # 4. Apply the Trim
         # Small buffer before cut to preserve first consonant
         final_start = max(0, cut_time - 0.05)
-        print(
-            f"DEBUG: Trimming video from {final_start}s. Original duration: {clip.duration}s"
+        logger.debug(
+            "Trimming video from %.3fs. Original duration: %.3fs",
+            final_start,
+            clip.duration,
         )
 
         final_clip = clip.subclipped(final_start)
@@ -123,12 +145,12 @@ def process_video_sync(input_path: str) -> bytes:
             logger=None,
         )
 
-        with open(temp_out, "rb") as f:
-            result = f.read()
-        return result
+        os.replace(temp_out, output_path)
+        success = True
+        return output_path
 
-    except Exception as e:
-        print(f"CRITICAL ERROR: {e}")
+    except Exception:
+        logger.error("Video processing failed", exc_info=True)
         raise
     finally:
         for obj in (final_clip, clip):
@@ -139,6 +161,8 @@ def process_video_sync(input_path: str) -> bytes:
                     pass
         safe_unlink(temp_out)
         safe_unlink(input_path)
+        if not success:
+            safe_unlink(output_path)
 
 
 MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500MB
@@ -149,6 +173,7 @@ ALLOWED_CONTENT_TYPES = {"video/mp4", "video/quicktime"}
 @app.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
     temp_in_path = None
+    temp_out_path = None
     try:
         if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
             raise HTTPException(status_code=400, detail="Invalid file type. Only MP4 and MOV are allowed.")
@@ -158,6 +183,8 @@ async def upload_video(file: UploadFile = File(...)):
             suffix = ".mov" if file.content_type == "video/quicktime" else ".mp4"
         temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
         temp_in_path = temp_in.name
+        temp_out_fd, temp_out_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(temp_out_fd)
         total_size = 0
         try:
             while True:
@@ -173,21 +200,24 @@ async def upload_video(file: UploadFile = File(...)):
             await file.close()
         loop = asyncio.get_running_loop()
         async with PROCESS_SEMAPHORE:
-            output_bytes = await loop.run_in_executor(
-                EXECUTOR, process_video_sync, temp_in_path
+            output_path = await loop.run_in_executor(
+                EXECUTOR, process_video_sync, temp_in_path, temp_out_path
             )
-        return Response(
-            content=output_bytes,
+        return FileResponse(
+            output_path,
             media_type="video/mp4",
             headers={"Content-Disposition": f'inline; filename="deuncified_{filename}"'},
+            background=BackgroundTask(safe_unlink, output_path),
         )
     except HTTPException:
         safe_unlink(temp_in_path)
+        safe_unlink(temp_out_path)
         raise
-    except Exception as e:
+    except Exception:
         safe_unlink(temp_in_path)
-        print(f"CRITICAL ERROR: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        safe_unlink(temp_out_path)
+        logger.error("Upload failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Video processing failed.")
 
 
 if __name__ == "__main__":
