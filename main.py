@@ -1,6 +1,7 @@
 import os
 import asyncio
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import Response
@@ -8,6 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from moviepy import VideoFileClip
 
 app = FastAPI()
+
+DEFAULT_MAX_CONCURRENT_JOBS = max(1, min(4, os.cpu_count() or 1))
+MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", str(DEFAULT_MAX_CONCURRENT_JOBS)))
+MAX_CONCURRENT_JOBS = max(1, MAX_CONCURRENT_JOBS)
+PROCESS_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+EXECUTOR = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_JOBS)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,22 +29,27 @@ async def health():
     return {"status": "ok"}
 
 
-def process_video_sync(content: bytes, filename: str) -> bytes:
-    """Runs in thread pool - MoviePy blocks the event loop otherwise."""
-    suffix = os.path.splitext(filename)[1]
-    temp_in = tempfile.mktemp(suffix=suffix)
-    temp_out = tempfile.mktemp(suffix=".mp4")
-    try:
-        with open(temp_in, "wb") as f:
-            f.write(content)
+def safe_unlink(path: str) -> None:
+    if path and os.path.exists(path):
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
 
-        clip = VideoFileClip(temp_in)
+
+def process_video_sync(input_path: str) -> bytes:
+    """Runs in thread pool - MoviePy blocks the event loop otherwise."""
+    temp_out = None
+    clip = None
+    final_clip = None
+    try:
+        clip = VideoFileClip(input_path)
 
         if not clip.audio:
             clip.close()
-            with open(temp_in, "rb") as f:
+            clip = None
+            with open(input_path, "rb") as f:
                 out = f.read()
-            os.unlink(temp_in)
             return out
 
         # 2. Extract first 5s of audio and convert to mono
@@ -97,6 +109,8 @@ def process_video_sync(content: bytes, filename: str) -> bytes:
         # 5. Write file - use ultrafast on low-RAM servers (t2.micro); medium for local/high-RAM
         preset = os.environ.get("FFMPEG_PRESET", "ultrafast")  # ultrafast | medium | slow
         bitrate = os.environ.get("FFMPEG_BITRATE", "5M")       # lower = less RAM
+        temp_out_fd, temp_out = tempfile.mkstemp(suffix=".mp4")
+        os.close(temp_out_fd)
         final_clip.write_videofile(
             temp_out,
             codec="libx264",
@@ -109,48 +123,69 @@ def process_video_sync(content: bytes, filename: str) -> bytes:
             logger=None,
         )
 
-        clip.close()
-        final_clip.close()
-
         with open(temp_out, "rb") as f:
             result = f.read()
-        os.unlink(temp_in)
-        os.unlink(temp_out)
         return result
 
     except Exception as e:
-        for p in [temp_in, temp_out]:
-            if os.path.exists(p):
-                try:
-                    os.unlink(p)
-                except Exception:
-                    pass
         print(f"CRITICAL ERROR: {e}")
         raise
+    finally:
+        for obj in (final_clip, clip):
+            if obj is not None:
+                try:
+                    obj.close()
+                except Exception:
+                    pass
+        safe_unlink(temp_out)
+        safe_unlink(input_path)
 
 
 MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 500MB
+UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
 ALLOWED_CONTENT_TYPES = {"video/mp4", "video/quicktime"}
 
 
 @app.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
+    temp_in_path = None
     try:
-        content = await file.read()
-        if len(content) > MAX_VIDEO_SIZE:
-            raise HTTPException(status_code=413, detail="File too large. Maximum 500MB.")
         if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
             raise HTTPException(status_code=400, detail="Invalid file type. Only MP4 and MOV are allowed.")
+        filename = file.filename or "video.mp4"
+        suffix = os.path.splitext(filename)[1]
+        if not suffix:
+            suffix = ".mov" if file.content_type == "video/quicktime" else ".mp4"
+        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        temp_in_path = temp_in.name
+        total_size = 0
+        try:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_VIDEO_SIZE:
+                    raise HTTPException(status_code=413, detail="File too large. Maximum 500MB.")
+                temp_in.write(chunk)
+        finally:
+            temp_in.close()
+            await file.close()
         loop = asyncio.get_running_loop()
-        output_bytes = await loop.run_in_executor(
-            None, process_video_sync, content, file.filename or "video.mp4"
-        )
+        async with PROCESS_SEMAPHORE:
+            output_bytes = await loop.run_in_executor(
+                EXECUTOR, process_video_sync, temp_in_path
+            )
         return Response(
             content=output_bytes,
             media_type="video/mp4",
-            headers={"Content-Disposition": f'inline; filename="deuncified_{file.filename or "video.mp4"}"'},
+            headers={"Content-Disposition": f'inline; filename="deuncified_{filename}"'},
         )
+    except HTTPException:
+        safe_unlink(temp_in_path)
+        raise
     except Exception as e:
+        safe_unlink(temp_in_path)
         print(f"CRITICAL ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
