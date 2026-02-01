@@ -10,7 +10,7 @@ module.exports = {
   apps: [
     {
       name: "deuncify",
-      script: "dist/index.cjs",
+      script: "/var/www/Deuncify-Video-Processor/dist/index.cjs",
       cwd: "/var/www/Deuncify-Video-Processor",
       instances: 1,
       autorestart: true,
