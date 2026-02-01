@@ -5,7 +5,7 @@ import { VideoPlayer } from "@/components/VideoPlayer";
 import { Footer } from "@/components/Footer";
 import { useVideoProcessing } from "@/hooks/use-video-processing";
 import { useAuth } from "@/lib/auth";
-import { Sparkles, Zap, MicOff, Scissors, LogIn, LogOut, Film } from "lucide-react";
+import { Sparkles, Zap, MicOff, Scissors, LogIn, LogOut, Film, Download } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button-custom";
 
@@ -35,6 +35,12 @@ export default function Home() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <span className="text-xl font-bold text-white">Deuncify</span>
           <div className="flex items-center gap-3">
+            <Link href="/install">
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/10">
+                <Download className="w-4 h-4 mr-1" />
+                Download the app
+              </Button>
+            </Link>
             {user ? (
               <>
                 <Link href="/videos">
@@ -153,6 +159,11 @@ export default function Home() {
               or a quick way to remove silence from video free – Deuncify handles it.
             </p>
             <div className="flex flex-wrap justify-center gap-4 mb-8">
+              <Link href="/install?utm_source=home&utm_medium=cta&utm_campaign=download_app">
+                <Button variant="outline" size="sm" className="text-white border-white/20 hover:bg-white/10">
+                  Download the app
+                </Button>
+              </Link>
               <Link href="/how-it-works?utm_source=home&utm_medium=cta&utm_campaign=how_it_works">
                 <Button variant="outline" size="sm" className="text-white border-white/20 hover:bg-white/10">
                   How it works

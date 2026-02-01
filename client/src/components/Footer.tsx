@@ -24,6 +24,9 @@ export function Footer() {
           <Link href="/pricing" className="hover:text-white transition-colors">
             Pricing
           </Link>
+          <Link href="/install" className="hover:text-white transition-colors">
+            Install app
+          </Link>
           <Link href="/terms" className="hover:text-white transition-colors">
             Terms
           </Link>

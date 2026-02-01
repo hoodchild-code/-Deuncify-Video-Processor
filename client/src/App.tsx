@@ -14,6 +14,7 @@ const VideoHistory = lazy(() => import("@/pages/VideoHistory"));
 const Terms = lazy(() => import("@/pages/Terms"));
 const Privacy = lazy(() => import("@/pages/Privacy"));
 const HowItWorks = lazy(() => import("@/pages/HowItWorks"));
+const Install = lazy(() => import("@/pages/Install"));
 const Pricing = lazy(() => import("@/pages/Pricing"));
 const Examples = lazy(() => import("@/pages/Examples"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -39,6 +40,7 @@ function Router() {
         <Route path="/how-it-works" component={HowItWorks} />
         <Route path="/pricing" component={Pricing} />
         <Route path="/examples" component={Examples} />
+        <Route path="/install" component={Install} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
