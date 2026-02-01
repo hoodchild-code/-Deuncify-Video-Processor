@@ -45,7 +45,14 @@ async function buildAll() {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
-  const externals = [...allDeps.filter((dep) => !allowlist.includes(dep)), "dotenv", "dotenv/config"];
+  const externals = [
+    ...allDeps.filter((dep) => !allowlist.includes(dep)),
+    "dotenv",
+    "dotenv/config",
+    "./vite",
+    "./vite.js",
+    "vite",
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],
