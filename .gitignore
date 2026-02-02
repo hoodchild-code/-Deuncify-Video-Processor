@@ -9,4 +9,4 @@ data/
 # Environment variables - NEVER commit these!
 .env
 .env.local
-.env.*.local
+.env.*.local__pycache__/
