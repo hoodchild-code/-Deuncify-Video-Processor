@@ -263,6 +263,11 @@ async def validate_video(file: UploadFile = File(...)):
     }
 
 
+# Clamp sensitivity to avoid abuse or numerical issues
+SENSITIVITY_MIN = 0.5
+SENSITIVITY_MAX = 20.0
+
+
 @app.post("/upload")
 async def upload_video(
     file: UploadFile = File(...),
@@ -271,8 +276,9 @@ async def upload_video(
     """
     Upload a video to remove leading silence (deuncify).
     Only MP4 and MOV are supported. Max size 500MB, max duration 10 minutes.
-    sensitivity: speech vs noise ratio (default 4.0); higher = less sensitive to quiet speech.
+    sensitivity: speech vs noise ratio (default 4.0, allowed 0.5–20); higher = less sensitive.
     """
+    sensitivity = max(SENSITIVITY_MIN, min(SENSITIVITY_MAX, float(sensitivity)))
     temp_paths_to_clean: list[str | None] = []
     temp_in_path: str | None = None
     temp_out_path: str | None = None

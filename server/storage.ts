@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { videos } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import path from "path";
 import fs from "fs";
@@ -78,18 +78,28 @@ export function getVideoFilepath(filename: string): string {
   return path.join(VIDEOS_DIR, base);
 }
 
+const CLEANUP_BATCH_SIZE = 100;
+
 export async function deleteExpiredVideos(): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
-  const cutoffMs = cutoff.getTime();
 
-  const all = await db.select().from(videos);
-  const expired = all.filter((r) => (r.createdAt as Date).getTime() < cutoffMs);
+  let totalDeleted = 0;
+  while (true) {
+    const expired = await db
+      .select()
+      .from(videos)
+      .where(lt(videos.createdAt, cutoff))
+      .limit(CLEANUP_BATCH_SIZE);
+    if (expired.length === 0) break;
 
-  for (const v of expired) {
-    const fp = getVideoFilepath(v.filename);
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
-    await db.delete(videos).where(eq(videos.id, v.id));
+    for (const v of expired) {
+      const fp = getVideoFilepath(v.filename);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+      await db.delete(videos).where(eq(videos.id, v.id));
+      totalDeleted++;
+    }
+    if (expired.length < CLEANUP_BATCH_SIZE) break;
   }
-  return expired.length;
+  return totalDeleted;
 }

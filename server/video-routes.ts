@@ -136,10 +136,26 @@ export function registerVideoRoutes(app: Express) {
   app.post(
     "/api/save-video",
     requireSupabaseAuth,
-    upload.single("file"),
+    (req, res, next) => {
+      upload.single("file")(req, res, (err) => {
+        if (err) {
+          if (err instanceof multer.MulterError) {
+            if (err.code === "LIMIT_FILE_SIZE") {
+              return res.status(413).json({ detail: "File too large. Maximum 500MB." });
+            }
+            return res.status(400).json({ detail: err.message });
+          }
+          return res.status(400).json({ detail: err instanceof Error ? err.message : "Invalid file" });
+        }
+        next();
+      });
+    },
     async (req: Request, res: Response) => {
       if (!req.file || !req.supabaseUser) {
         return res.status(400).json({ detail: "No file" });
+      }
+      if (!ALLOWED_MIMETYPES.includes(req.file.mimetype)) {
+        return res.status(400).json({ detail: "Invalid file type. Only MP4 and MOV are allowed." });
       }
       const userId = req.supabaseUser.id;
       const originalName = sanitizeFilename(

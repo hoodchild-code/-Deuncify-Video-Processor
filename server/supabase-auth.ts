@@ -151,14 +151,12 @@ export function optionalSupabaseAuth(req: Request, _res: Response, next: NextFun
   const token = authHeader?.replace(/^Bearer\s+/i, "");
 
   if (!token) {
-    console.log("[auth] No token provided");
     next();
     return;
   }
 
   const secret = process.env.SUPABASE_JWT_SECRET;
   if (!secret) {
-    console.log("[auth] No JWT secret configured");
     next();
     return;
   }
@@ -189,7 +187,9 @@ export function optionalSupabaseAuth(req: Request, _res: Response, next: NextFun
             id: decoded.sub,
             email: decoded.email,
           };
-          console.log(`[auth] Authenticated user: ${decoded.sub}`);
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`[auth] Authenticated user: ${decoded.sub}`);
+          }
         }
         // Continue regardless - this is optional auth
         next();
@@ -202,7 +202,9 @@ export function optionalSupabaseAuth(req: Request, _res: Response, next: NextFun
           id: decoded.sub,
           email: decoded.email,
         };
-        console.log(`[auth] Authenticated user: ${decoded.sub}`);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[auth] Authenticated user: ${decoded.sub}`);
+        }
       } catch {
         // ignore invalid tokens for optional auth
       }
