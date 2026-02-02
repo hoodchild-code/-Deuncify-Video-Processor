@@ -88,8 +88,11 @@ node -v
 
 ### 5.3 Install Python deps for the app
 
+Install libmagic (required for python-magic file content validation), then Python deps:
+
 ```bash
-sudo pip3 install uvicorn fastapi python-multipart moviepy numpy
+sudo apt install -y libmagic1
+sudo pip3 install uvicorn fastapi python-multipart moviepy numpy python-magic
 ```
 
 ### 5.4 Add swap (required for t2.micro – prevents OOM crashes)
